@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using S7.Net.Protocol;
+using System.Threading;
 
 namespace S7.Net
 {
@@ -16,29 +17,38 @@ namespace S7.Net
         /// <summary>
         /// Connects to the PLC and performs a COTP ConnectionRequest and S7 CommunicationSetup.
         /// </summary>
+        /// <param name="cancellationToken">The token to monitor for cancellation requests</param>
         /// <returns>A task that represents the asynchronous open operation.</returns>
-        public async Task OpenAsync()
+        public async Task OpenAsync(CancellationToken cancellationToken)
         {
-            await ConnectAsync();
-
-            await stream.WriteAsync(ConnectionRequest.GetCOTPConnectionRequest(CPU, Rack, Slot), 0, 22);
-            var response = await COTP.TPDU.ReadAsync(stream);
-            if (response.PDUType != 0xd0) //Connect Confirm
+            using (cancellationToken.Register(ForceCloseConnection))
             {
-                throw new InvalidDataException("Error reading Connection Confirm", response.TPkt.Data, 1, 0x0d);
+                await ConnectAsync();
+
+                await stream.WriteAsync(ConnectionRequest.GetCOTPConnectionRequest(CPU, Rack, Slot), 0, 22);
+                var response = await COTP.TPDU.ReadAsync(stream);
+                if (response.PDUType != 0xd0) //Connect Confirm
+                {
+                    throw new InvalidDataException("Error reading Connection Confirm", response.TPkt.Data, 1, 0x0d);
+                }
+
+                await stream.WriteAsync(GetS7ConnectionSetup(), 0, 25);
+
+                var s7data = await COTP.TSDU.ReadAsync(stream);
+                if (s7data == null)
+                    throw new WrongNumberOfBytesException("No data received in response to Communication Setup");
+
+                //Check for S7 Ack Data
+                if (s7data[1] != 0x03)
+                    throw new InvalidDataException("Error reading Communication Setup response", s7data, 1, 0x03);
+
+                MaxPDUSize = (short)(s7data[18] * 256 + s7data[19]);
             }
+        }
 
-            await stream.WriteAsync(GetS7ConnectionSetup(), 0, 25);
-
-            var s7data = await COTP.TSDU.ReadAsync(stream);
-            if (s7data == null)
-                throw new WrongNumberOfBytesException("No data received in response to Communication Setup");
-
-            //Check for S7 Ack Data
-            if (s7data[1] != 0x03)
-                throw new InvalidDataException("Error reading Communication Setup response", s7data, 1, 0x03);
-
-            MaxPDUSize = (short)(s7data[18] * 256 + s7data[19]);
+        public Task OpenAsync()
+        {
+            return OpenAsync(CancellationToken.None);
         }
 
         private async Task ConnectAsync()
@@ -48,6 +58,19 @@ namespace S7.Net
             await tcpClient.ConnectAsync(IP, Port);
             stream = tcpClient.GetStream();
         }
+
+        /// <summary>
+        /// Closes the tcp client any time, even during a connection attempt.
+        /// </summary>
+        private void ForceCloseConnection()
+        {
+            if (tcpClient == null)
+            {
+                return;
+            }
+            tcpClient.Close();
+        }
+
 
         /// <summary>
         /// Reads a number of bytes from a DB starting from a specified index. This handles more than 200 bytes with multiple requests.
@@ -208,7 +231,7 @@ namespace S7.Net
             //Snap7 seems to choke on PDU sizes above 256 even if snap7 
             //replies with bigger PDU size in connection setup.
             AssertPduSizeForRead(dataItems);
-            
+
             try
             {
                 // first create the header
@@ -317,7 +340,7 @@ namespace S7.Net
                 //Must be writing a bit value as bitAdr is specified
                 if (value is bool)
                 {
-                    await WriteBitAsync(dataType, db, startByteAdr, bitAdr, (bool) value);
+                    await WriteBitAsync(dataType, db, startByteAdr, bitAdr, (bool)value);
                 }
                 else if (value is int intValue)
                 {
@@ -474,7 +497,7 @@ namespace S7.Net
 
             try
             {
-                var value = new[] {bitValue ? (byte) 1 : (byte) 0};
+                var value = new[] { bitValue ? (byte)1 : (byte)0 };
                 varCount = value.Length;
                 // first create the header
                 int packageSize = 35 + value.Length;
