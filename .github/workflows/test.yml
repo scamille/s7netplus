@@ -35,9 +35,9 @@ jobs:
             dotnet-sdk: '5.0.x'
           - os: windows-latest
             test-framework: netcoreapp3.1
-            dotnet-sdk: '5.0.x'
+            dotnet-sdk: '3.1.x'
           - os: windows-latest
-            test-framework: '3.1.x'
+            test-framework: net5.0
             dotnet-sdk: '5.0.x'
           - os: windows-latest
             test-framework: net452
