@@ -23,6 +23,12 @@ jobs:
             installSnap7: true
           - os: windows-latest
             test-framework: net452
+          - test-framework: netcoreapp3.1
+            dotnet: '3.1.x'
+          - test-framework: net5.0
+            dotnet: '5.0.x'
+          - test-framework: net452
+            dotnet: '5.0.x'
       fail-fast: false
 
     steps:
@@ -43,7 +49,7 @@ jobs:
       - name: Setup Dotnet
         uses: actions/setup-dotnet@v1
         with:
-          dotnet-version: '5.0.x' # SDK Version to use; x will use the latest version of the 3.1 channel
+          dotnet-version: ${{ matrix.dotnet }}
 
       - name: Restore
         run: dotnet restore S7.Net.UnitTest
