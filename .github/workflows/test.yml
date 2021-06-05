@@ -16,7 +16,6 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
         test-framework: [""]
-        dotnet-sdk: [""]
         include:
           - os: ubuntu-latest
             test-framework: netcoreapp3.1
